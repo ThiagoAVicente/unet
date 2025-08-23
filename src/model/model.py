@@ -28,7 +28,11 @@ class UNet(nn.Module):
 
         # functions
         self.downscale = nn.MaxPool2d(kernel_size = 2, stride = 2)
-        self.upscale = nn.Upsample(scale_factor=2,mode='bilinear')
+        def upscale(inc,outc):
+           return  nn.Sequential(
+            nn.Upsample(scale_factor=2,mode='bilinear'),
+            nn.Conv2d(inc, outc, kernel_size=3, padding=1)
+        )
 
         def module(a,b):
             return nn.Sequential(
@@ -51,15 +55,25 @@ class UNet(nn.Module):
 
         logger.info("Creating decoder layers")
         decoder_blocks = []
-
+        upscalers = [] 
+        
         for i in range ( num_downs, 0, -1):
-            decoder_blocks.append(module(channels[i]*2, channels[i]))
+            inc = channels[i]*2
+            outc = channels[i]
+            decoder_blocks.append(
+                module(inc,outc)
+            )
+            upscalers.append(upscale(inc,outc))
+            
         self.decoder = nn.ModuleList(decoder_blocks)
+        self.upscalers = nn.ModuleList(upscalers)
 
         self.out = nn.Conv2d(64,self.out_channels,kernel_size=1)
 
         if len(encoder_blocks) == len(decoder_blocks):
             logger.info(f"Successfully created model with {num_downs} downscaling(s).")
+
+
 
     def save(self, file_name:str = "checkpoint.pth"):
         """Save weights and metadata of the model to a file"""
@@ -118,7 +132,7 @@ class UNet(nn.Module):
 
         # propagate data
         current = x
-        encoder_outputs = [] # data structure to store intermediate outputs
+        encoder_outputs = [] # stack to store intermediate outputs
 
         # encode
         for enc in self.encoder:
@@ -129,12 +143,18 @@ class UNet(nn.Module):
         # bottom
         current = self.bottom(current)
 
-        for dec in self.decoder:
+        for i,dec in enumerate(self.decoder):
             # upscale
-            current = self.upscale(current)
+            current = self.upscalers[i](current)
+            enc_output = encoder_outputs.pop()
+            current = torch.cat([current,enc_output],dim=1)
 
-            # doubleconv
+            # doubleconv-
             current = dec(current)
+            
+            
+            
+
 
         return self.out(current)
 
@@ -163,6 +183,7 @@ class UNet(nn.Module):
                 optimizer.zero_grad()
 
                 outputs = self(inputs)
+                
                 loss = criterion(outputs,targets)
 
                 running_loss += loss.item()

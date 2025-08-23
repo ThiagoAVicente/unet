@@ -3,5 +3,5 @@
 __pycache__/
 .ropeproject
 .ropeproject/
-*data/*
-b
+data/*
+models/*

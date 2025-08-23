@@ -22,45 +22,44 @@ class UNet(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_downs = num_downs
-        
+
         self.epoch:int = 0
         self.loss:float = .0 # No loss because no training was done yet
 
         # functions
         self.downscale = nn.MaxPool2d(kernel_size = 2, stride = 2)
         self.upscale = nn.Upsample(scale_factor=2,mode='bilinear')
-        
+
         def module(a,b):
             return nn.Sequential(
-                nn.Conv2d(a,b,3),
+                nn.Conv2d(a,b,3, padding=1),
                 nn.ReLU(),
-                nn.Conv2d(b,b,3),
+                nn.Conv2d(b,b,3, padding=1),
                 nn.ReLU(),
             )
-           
+
         logger.info("Creating encoder layers")
         channels =  [self.in_channels, 64] # in -> 64
         for i in range (1, num_downs):
             channels.append(channels[i]*2)
-        
+
         encoder_blocks = [module( channels[i], channels[i+1]) for i in range(num_downs)]
         self.encoder = nn.ModuleList(encoder_blocks)
-        
+
         logger.info("Creating bottom layer")
         self.bottom = module(channels[-1],channels[-1]*2) # module
 
         logger.info("Creating decoder layers")
         decoder_blocks = []
-        print(channels)
-        
+
         for i in range ( num_downs, 0, -1):
             decoder_blocks.append(module(channels[i]*2, channels[i]))
         self.decoder = nn.ModuleList(decoder_blocks)
 
         self.out = nn.Conv2d(64,self.out_channels,kernel_size=1)
-        
+
         if len(encoder_blocks) == len(decoder_blocks):
-            logger.info(f"Successfully created model with {num_downs} downscaling(s).")  
+            logger.info(f"Successfully created model with {num_downs} downscaling(s).")
 
     def save(self, file_name:str = "checkpoint.pth"):
         """Save weights and metadata of the model to a file"""
@@ -129,76 +128,76 @@ class UNet(nn.Module):
 
         # bottom
         current = self.bottom(current)
-        
+
         for dec in self.decoder:
             # upscale
             current = self.upscale(current)
-            
+
             # doubleconv
-            current = dec(current)        
-        
+            current = dec(current)
+
         return self.out(current)
 
     def train_model(self, train_loader, criterion, optimizer, epochs:int, lr:float = .001) -> None:
-        """ 
+        """
         Train the unet model
         train_loader: pytorch dataloader containing input images and target
         criterion: loss function
         optimizer: pytorch optimizer
         epochs: number of cycles trough the training dataset
         """
-        
+
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.to(device)
-        
+
         trainer = logger.getChild("Trainer")
         trainer.info("Starting model trainment")
         for epoch in range(epochs):
             self.train()
             running_loss = .0
-            
+
             for inputs,targets in train_loader:
                 inputs,targets = inputs.to(device), targets.to(device)
-                
+
                 # parameter gradients to 0
                 optimizer.zero_grad()
-                
+
                 outputs = self(inputs)
                 loss = criterion(outputs,targets)
-                
+
                 running_loss += loss.item()
-                
+
                 # autograd
                 loss.backward()
                 optimizer.step()
-                
+
             self.epoch += 1
             self.loss = running_loss / len(train_loader)
-            
+
             trainer.info(f"Epoch {epoch} : loss {self.loss}")
-        return 
-        
+        return
+
     def __str__(self) -> str:
         """Return a string representation of the model structure"""
         structure = []
-        
-        # encoder 
+
+        # encoder
         structure.append("UNet Architecture:")
         structure.append("\nENCODER BLOCKS:")
         for i, block in enumerate(self.encoder):
             structure.append(f"  Block {i}: {block}")
-        
-        # bottom 
+
+        # bottom
         structure.append("\nBOTTOM:")
         structure.append(f"  {self.bottom}")
-        
+
         #decoder
         structure.append("\nDECODER BLOCKS:")
         for i, block in enumerate(self.decoder):
             structure.append(f"  Block {i}: {block}")
-        
+
         #output
         structure.append("\nOUTPUT:")
         structure.append(f"  {self.out}")
-        
+
         return '\n'.join(structure)

@@ -24,7 +24,7 @@ class UNet(nn.Module):
         self.num_downs = num_downs
         
         self.epoch:int = 0
-        self.loss:int = -1 # No loss because no training was done yet
+        self.loss:float = .0 # No loss because no training was done yet
 
         # functions
         self.downscale = nn.MaxPool2d(kernel_size = 2, stride = 2)
@@ -139,8 +139,44 @@ class UNet(nn.Module):
         
         return self.out(current)
 
-    def train(self) -> None:
-        pass
+    def train_model(self, train_loader, criterion, optimizer, epochs:int, lr:float = .001) -> None:
+        """ 
+        Train the unet model
+        train_loader: pytorch dataloader containing input images and target
+        criterion: loss function
+        optimizer: pytorch optimizer
+        epochs: number of cycles trough the training dataset
+        """
+        
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.to(device)
+        
+        trainer = logger.getChild("Trainer")
+        trainer.info("Starting model trainment")
+        for epoch in range(epochs):
+            self.train()
+            running_loss = .0
+            
+            for inputs,targets in train_loader:
+                inputs,targets = inputs.to(device), targets.to(device)
+                
+                # parameter gradients to 0
+                optimizer.zero_grad()
+                
+                outputs = self(inputs)
+                loss = criterion(outputs,targets)
+                
+                running_loss += loss.item()
+                
+                # autograd
+                loss.backward()
+                optimizer.step()
+                
+            self.epoch += 1
+            self.loss = running_loss / len(train_loader)
+            
+            trainer.info(f"Epoch {epoch} : loss {self.loss}")
+        return 
         
     def __str__(self) -> str:
         """Return a string representation of the model structure"""

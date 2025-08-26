@@ -35,13 +35,13 @@ def main():
                     f"out_channels={out_channels}, num_downs={num_downs}")
 
     # initialize model
-    #model = UNet(
-    #    image_size = image_size,
-    #    in_channels= in_channels,
-    #    out_channels= out_channels,
-    #    num_downs=num_downs
-    #)
-    model = UNet.load("models/pets-07.pth")
+    model = UNet(
+        image_size = image_size,
+        in_channels= in_channels,
+        out_channels= out_channels,
+        num_downs=num_downs
+    )
+    #model = UNet.load("models/pets-07.pth")
 
     # fefine transformations
     image_transform = transforms.Compose([
@@ -73,7 +73,7 @@ def main():
 
     dataset = Subset(full_dataset, indices)
 
-    data_loader = DataLoader(dataset,batch_size=batch_size,shuffle=True)
+    data_loader = DataLoader(dataset,batch_size=batch_size,shuffle=True,num_workers=4)
 
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)

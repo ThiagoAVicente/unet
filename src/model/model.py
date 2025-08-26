@@ -1,21 +1,21 @@
-
+"""
+vcnt 2025
+"""
 import torch.nn as nn
 import torch
 from typing import Optional
 import logging
 
+from .parts import DoubleConv, Up, Bottom
+
 logger = logging.getLogger("Model")
 
 class UNet(nn.Module):
+    """U-Net architecture for image segmentation."""
 
     def __init__(self, image_size:int = 256, in_channels:int = 1, out_channels:int = 1, num_downs:int = 1 ) -> None:
 
         super().__init__()
-
-        if num_downs < 1:
-            raise ValueError(
-                "Number of downscaling must be greater or equal to 1."
-            )
 
         # save parameters
         self.image_size = image_size
@@ -26,54 +26,38 @@ class UNet(nn.Module):
         self.epoch:int = 0
         self.loss:float = .0 # No loss because no training was done yet
 
-        # functions
-        self.downscale = nn.MaxPool2d(kernel_size = 2, stride = 2)
-        def upscale(inc,outc):
-           return  nn.Sequential(
-            nn.Upsample(scale_factor=2,mode='bilinear'),
-            nn.Conv2d(inc, outc, kernel_size=3, padding=1)
-        )
+        self.createEncoder(in_channels,out_channels,num_downs)
+        self.bottom = Bottom(64 * (2 ** (num_downs-1)),64 * (2 ** num_downs))
+        self.createDecoder(out_channels,num_downs)
+        self.out = nn.Conv2d(64, out_channels, kernel_size=1)
+        logger.info(f"Successfully created model with {num_downs} downscaling(s).")
 
-        def module(a,b):
-            return nn.Sequential(
-                nn.Conv2d(a,b,3, padding=1),
-                nn.ReLU(),
-                nn.Conv2d(b,b,3, padding=1),
-                nn.ReLU(),
-            )
+    def createEncoder(self, in_channels:int, out_channels:int, num_downs:int) -> None:
+        """Create the encoder part of the UNet"""
+        self.encoder = nn.ModuleList()
+        self.downscaler = nn.MaxPool2d(kernel_size=2, stride=2)
+        current_in_channels = in_channels
+        current_out_channels = 64
 
-        logger.info("Creating encoder layers")
-        channels =  [self.in_channels, 64] # in -> 64
-        for i in range (1, num_downs):
-            channels.append(channels[i]*2)
+        for _ in range(num_downs):
+            self.encoder.append(DoubleConv(current_in_channels, current_out_channels))
+            current_in_channels = current_out_channels
+            current_out_channels *= 2
 
-        encoder_blocks = [module( channels[i], channels[i+1]) for i in range(num_downs)]
-        self.encoder = nn.ModuleList(encoder_blocks)
+        logging.info(f"Encoder created with {num_downs} downscaling(s).")
 
-        logger.info("Creating bottom layer")
-        self.bottom = module(channels[-1],channels[-1]*2) # module
+    def createDecoder(self,  out_channels:int, num_downs:int) -> None:
+        """ Create the decoder part of the UNet """
+        self.decoder = nn.ModuleList()
+        current_in_channels = 64 * (2 ** num_downs)
+        current_out_channels = current_in_channels // 2
 
-        logger.info("Creating decoder layers")
-        decoder_blocks = []
-        upscalers = [] 
-        
-        for i in range ( num_downs, 0, -1):
-            inc = channels[i]*2
-            outc = channels[i]
-            decoder_blocks.append(
-                module(inc,outc)
-            )
-            upscalers.append(upscale(inc,outc))
-            
-        self.decoder = nn.ModuleList(decoder_blocks)
-        self.upscalers = nn.ModuleList(upscalers)
+        for _ in range(num_downs):
+            self.decoder.append(Up(current_in_channels, current_out_channels))
+            current_in_channels = current_out_channels
+            current_out_channels //= 2
 
-        self.out = nn.Conv2d(64,self.out_channels,kernel_size=1)
-
-        if len(encoder_blocks) == len(decoder_blocks):
-            logger.info(f"Successfully created model with {num_downs} downscaling(s).")
-
-
+        logging.info(f"Decoder created with {num_downs} upscaling(s).")
 
     def save(self, file_name:str = "checkpoint.pth"):
         """Save weights and metadata of the model to a file"""
@@ -114,7 +98,8 @@ class UNet(nn.Module):
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         """
         process data in the network
-        x:torch.Tensor -> 4D tensor with"""
+        x:torch.Tensor -> 4D tensor with
+        """
 
         # validate x sizes
         if x.dim() != 4:
@@ -138,23 +123,15 @@ class UNet(nn.Module):
         for enc in self.encoder:
             current = enc(current)
             encoder_outputs.append(current)
-            current = self.downscale(current)
+            current = self.downscaler(current)
 
         # bottom
         current = self.bottom(current)
 
-        for i,dec in enumerate(self.decoder):
+        for dec in self.decoder:
             # upscale
-            current = self.upscalers[i](current)
             enc_output = encoder_outputs.pop()
-            current = torch.cat([current,enc_output],dim=1)
-
-            # doubleconv-
-            current = dec(current)
-            
-            
-            
-
+            current = dec(current, enc_output)
 
         return self.out(current)
 
@@ -172,10 +149,15 @@ class UNet(nn.Module):
 
         trainer = logger.getChild("Trainer")
         trainer.info("Starting model trainment")
+
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.5, patience=3,
+            threshold=0.01,
+        )
+
         for epoch in range(epochs):
             self.train()
             running_loss = .0
-
             for inputs,targets in train_loader:
                 inputs,targets = inputs.to(device), targets.to(device)
 
@@ -183,7 +165,6 @@ class UNet(nn.Module):
                 optimizer.zero_grad()
 
                 outputs = self(inputs)
-                
                 loss = criterion(outputs,targets)
 
                 running_loss += loss.item()
@@ -194,8 +175,10 @@ class UNet(nn.Module):
 
             self.epoch += 1
             self.loss = running_loss / len(train_loader)
+            scheduler.step(self.loss)
 
-            trainer.info(f"Epoch {epoch} : loss {self.loss}")
+            trainer.info(f"Epoch {epoch} : loss {self.loss}, lr: {optimizer.param_groups[0]['lr']}")
+
         return
 
     def __str__(self) -> str:

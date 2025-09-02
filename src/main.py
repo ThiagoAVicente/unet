@@ -35,13 +35,16 @@ def main():
                     f"out_channels={out_channels}, num_downs={num_downs}")
 
     # initialize model
-    model = UNet(
-        image_size = image_size,
-        in_channels= in_channels,
-        out_channels= out_channels,
-        num_downs=num_downs
-    )
-    #model = UNet.load("models/pets-07.pth")
+    #model = UNet(
+    #    image_size = image_size,
+    #    in_channels= in_channels,
+    #    out_channels= out_channels,
+    #    num_downs=num_downs
+    #)
+    model = UNet.load("models/pets_unet.pth")
+    if model is None:
+        logger.error("Failed to load the model.")
+        return
 
     # fefine transformations
     image_transform = transforms.Compose([

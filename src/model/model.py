@@ -150,11 +150,6 @@ class UNet(nn.Module):
         trainer = logger.getChild("Trainer")
         trainer.info("Starting model trainment")
 
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=3,
-            threshold=0.01,
-        )
-
         for epoch in range(epochs):
             self.train()
             running_loss = .0
@@ -175,7 +170,6 @@ class UNet(nn.Module):
 
             self.epoch += 1
             self.loss = running_loss / len(train_loader)
-            scheduler.step(self.loss)
 
             trainer.info(f"Epoch {epoch} : loss {self.loss}, lr: {optimizer.param_groups[0]['lr']}")
 

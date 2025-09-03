@@ -152,6 +152,10 @@ class UNet(nn.Module):
             from contextlib import nullcontext
             autocast_ctx = nullcontext()  # does nothing
 
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.5, patience=3, verbose=True
+        )
+
         trainer = logger.getChild("Trainer")
         trainer.info("Starting model trainment")
 
@@ -176,6 +180,7 @@ class UNet(nn.Module):
 
             self.epoch += 1
             self.loss = running_loss / len(train_loader)
+            scheduler.step(self.loss)
 
             trainer.info(f"Epoch {epoch} : loss {self.loss}, lr: {optimizer.param_groups[0]['lr']}")
 

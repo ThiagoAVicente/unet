@@ -153,7 +153,7 @@ class UNet(nn.Module):
             autocast_ctx = nullcontext()  # does nothing
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=3, verbose=True
+            optimizer, mode='min', factor=0.5, patience=3
         )
 
         trainer = logger.getChild("Trainer")

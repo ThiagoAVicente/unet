@@ -159,8 +159,9 @@ class UNet(nn.Module):
                 # parameter gradients to 0
                 optimizer.zero_grad()
 
-                outputs = self(inputs)
-                loss = criterion(outputs,targets)
+                with torch.cuda.amp.autocast():   # mixed precision
+                    outputs = self(inputs)
+                    loss = criterion(outputs, targets)
 
                 running_loss += loss.item()
 

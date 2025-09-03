@@ -143,9 +143,14 @@ class UNet(nn.Module):
         optimizer: pytorch optimizer
         epochs: number of cycles trough the training dataset
         """
-
+        
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.to(device)
+        if torch.cuda.is_available():
+            autocast_ctx = torch.cuda.amp.autocast()
+        else:
+            from contextlib import nullcontext
+            autocast_ctx = nullcontext()  # does nothing
 
         trainer = logger.getChild("Trainer")
         trainer.info("Starting model trainment")
@@ -159,7 +164,7 @@ class UNet(nn.Module):
                 # parameter gradients to 0
                 optimizer.zero_grad()
 
-                with torch.cuda.amp.autocast():   # mixed precision
+                with autocast_ctx:
                     outputs = self(inputs)
                     loss = criterion(outputs, targets)
 
